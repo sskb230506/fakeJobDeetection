@@ -131,6 +131,57 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+const BACKEND_URL = 'http://localhost:5000/api/jobs/analyze';
+
+// Async helper to post job details to Express server with retry backoff
+async function scanJobOnBackend(job: JobDetails, retries = 3, delay = 1000): Promise<any> {
+  try {
+    const response = await fetch(BACKEND_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: job.title,
+        description: job.description,
+        companyName: job.company,
+        location: job.location,
+        salary: job.salary,
+        url: job.url,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server returned status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (retries > 0) {
+      console.warn(`Backend scan failed. Retrying in ${delay}ms... (Retries left: ${retries})`, error);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return scanJobOnBackend(job, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
+
+// Shared storage saver
+function saveScanItem(item: ScanHistoryItem, sendResponse: (response: any) => void) {
+  chrome.storage.local.get('history', (result) => {
+    const history: ScanHistoryItem[] = result.history || [];
+    const filteredHistory = history.filter(h => h.job.id !== item.job.id);
+    const updatedHistory = [item, ...filteredHistory].slice(0, 20);
+
+    chrome.storage.local.set({ 
+      history: updatedHistory,
+      lastScan: item 
+    }, () => {
+      sendResponse(item);
+    });
+  });
+}
+
 // Message Listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, payload } = message;
@@ -151,26 +202,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === 'SCAN_JOB') {
     const job: JobDetails = payload;
-    const analysis = analyzeJobContent(job);
+    
+    // Attempt backend analysis with offline fallback
+    scanJobOnBackend(job)
+      .then((backendResult) => {
+        const newHistoryItem: ScanHistoryItem = {
+          job: {
+            id: job.id,
+            title: backendResult.title,
+            company: backendResult.company.name,
+            location: backendResult.location || '',
+            description: backendResult.description,
+            salary: backendResult.salary || '',
+            url: job.url,
+            timestamp: new Date(backendResult.scannedAt).getTime()
+          },
+          result: {
+            jobId: job.id,
+            trustScore: backendResult.trustScore,
+            status: backendResult.status,
+            redFlags: backendResult.redFlags,
+            greenFlags: backendResult.greenFlags,
+            scannedAt: new Date(backendResult.scannedAt).getTime(),
+            companyVerified: backendResult.company.verified
+          }
+        };
+        saveScanItem(newHistoryItem, sendResponse);
+      })
+      .catch((err) => {
+        console.error('Failed to analyze job on backend. Falling back to local scanner.', err);
+        const localAnalysis = analyzeJobContent(job);
+        
+        // Add offline scanning indication flag
+        localAnalysis.greenFlags = [
+          ...localAnalysis.greenFlags,
+          'Offline Mode: Client-side local heuristic scan.'
+        ];
 
-    chrome.storage.local.get('history', (result) => {
-      const history: ScanHistoryItem[] = result.history || [];
-      
-      // Prevent duplicate scan records in history
-      const filteredHistory = history.filter(item => item.job.id !== job.id);
-      const newHistoryItem: ScanHistoryItem = { job, result: analysis };
-      
-      // Keep only top 20 recent items in history
-      const updatedHistory = [newHistoryItem, ...filteredHistory].slice(0, 20);
-
-      chrome.storage.local.set({ 
-        history: updatedHistory,
-        lastScan: newHistoryItem 
-      }, () => {
-        sendResponse(newHistoryItem);
+        const newHistoryItem: ScanHistoryItem = { job, result: localAnalysis };
+        saveScanItem(newHistoryItem, sendResponse);
       });
-    });
-    return true;
+    return true; // Keep channel open for async fetch resolution
   }
 
   if (type === 'GET_LAST_SCAN') {
