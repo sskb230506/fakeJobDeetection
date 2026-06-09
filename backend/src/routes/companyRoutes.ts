@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getCompanies, getCompanyById, verifyCompany, enrichCompanyByName } from '../controllers/companyController';
+import { getCompanies, getCompanyById, verifyCompany, enrichCompanyByName, verifyCompanyAudit } from '../controllers/companyController';
 
 const router = Router();
 
@@ -7,5 +7,6 @@ router.get('/enrich', enrichCompanyByName);
 router.get('/', getCompanies);
 router.get('/:id', getCompanyById);
 router.post('/verify', verifyCompany);
+router.post('/verify-audit', verifyCompanyAudit);
 
 export default router;

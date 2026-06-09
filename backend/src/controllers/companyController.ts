@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import { enrichCompany } from '../services/enrichmentService';
+import { verifyCompanyCredentials } from '../services/verificationEngine';
 
 /**
  * Retrieves a list of all company records
@@ -114,6 +115,75 @@ export async function enrichCompanyByName(req: Request, res: Response): Promise<
     res.status(200).json(company);
   } catch (error: any) {
     console.error('Error in company enrichment endpoint:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+}
+
+/**
+ * Performs a comprehensive live verification check on a company, updates the database, and returns the score
+ */
+export async function verifyCompanyAudit(req: Request, res: Response): Promise<void> {
+  try {
+    const { companyId, name, website } = req.body;
+
+    let targetName = name as string;
+    let targetWebsite = website as string;
+    let dbCompany = null;
+
+    if (companyId) {
+      dbCompany = await prisma.company.findUnique({
+        where: { id: companyId },
+      });
+      if (!dbCompany) {
+        res.status(404).json({ error: 'Company record not found' });
+        return;
+      }
+      targetName = dbCompany.name;
+      targetWebsite = dbCompany.website || targetWebsite;
+    }
+
+    if (!targetName) {
+      res.status(400).json({ error: 'Company name or companyId is required' });
+      return;
+    }
+
+    // Run the verification audit
+    const result = await verifyCompanyCredentials(targetName, targetWebsite);
+
+    // Save results in database
+    const score = result.score;
+    const isVerified = score >= 60; // Flag as verified if score is 60 or above
+
+    if (dbCompany) {
+      await prisma.company.update({
+        where: { id: dbCompany.id },
+        data: {
+          trustScore: score,
+          verified: isVerified,
+          website: result.website || undefined,
+        },
+      });
+    } else {
+      // Upsert by name
+      await prisma.company.upsert({
+        where: { name: targetName },
+        update: {
+          trustScore: score,
+          verified: isVerified,
+          website: result.website || undefined,
+        },
+        create: {
+          name: targetName,
+          trustScore: score,
+          verified: isVerified,
+          website: result.website || null,
+        },
+      });
+    }
+
+    res.status(200).json(result);
+  } catch (error: any) {
+    console.error('Error running company verification audit:', error);
     res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }
