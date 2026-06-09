@@ -18,13 +18,16 @@ model User {
 }
 
 model Company {
-  id         String        @id @default(uuid())
-  name       String        @unique
-  verified   Boolean       @default(false)
-  website    String?
-  trustScore Int?          @default(100)
-  createdAt  DateTime      @default(now())
-  jobs       JobAnalysis[]
+  id          String        @id @default(uuid())
+  name        String        @unique
+  verified    Boolean       @default(false)
+  website     String?
+  linkedinUrl String?
+  size        String?
+  foundedYear Int?
+  trustScore  Int?          @default(100)
+  createdAt   DateTime      @default(now())
+  jobs        JobAnalysis[]
 
   @@map("companies")
 }

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
+import { enrichCompany } from '../services/enrichmentService';
 
 // Server-side rule-based evaluator
 function runHeuristicScanner(title: string, desc: string, company: string, salary: string) {
@@ -120,13 +121,18 @@ export async function analyzeJob(req: Request, res: Response): Promise<void> {
     });
 
     const heuristics = runHeuristicScanner(title, description, companyName, salary);
+    const enrichment = enrichCompany(companyName);
 
     if (!company) {
       company = await prisma.company.create({
         data: {
           name: companyName,
-          verified: heuristics.companyVerified,
+          verified: heuristics.companyVerified && enrichment.verified,
           trustScore: heuristics.trustScore,
+          website: enrichment.website,
+          linkedinUrl: enrichment.linkedinUrl,
+          size: enrichment.size,
+          foundedYear: enrichment.foundedYear,
         },
       });
     }

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
+import { enrichCompany } from '../services/enrichmentService';
 
 /**
  * Retrieves a list of all company records
@@ -74,6 +75,45 @@ export async function verifyCompany(req: Request, res: Response): Promise<void> 
     res.status(200).json(company);
   } catch (error: any) {
     console.error('Error verifying company:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+}
+
+/**
+ * Enriches and retrieves company metrics on-demand via name query param
+ */
+export async function enrichCompanyByName(req: Request, res: Response): Promise<void> {
+  try {
+    const name = req.query.name as string;
+
+    if (!name) {
+      res.status(400).json({ error: 'Company name query parameter is required' });
+      return;
+    }
+
+    // Check if company already exists
+    let company = await prisma.company.findUnique({
+      where: { name },
+    });
+
+    if (!company) {
+      const enrichment = enrichCompany(name);
+      company = await prisma.company.create({
+        data: {
+          name,
+          verified: enrichment.verified,
+          website: enrichment.website,
+          linkedinUrl: enrichment.linkedinUrl,
+          size: enrichment.size,
+          foundedYear: enrichment.foundedYear,
+          trustScore: 100,
+        },
+      });
+    }
+
+    res.status(200).json(company);
+  } catch (error: any) {
+    console.error('Error in company enrichment endpoint:', error);
     res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }
