@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import { enrichCompany } from '../services/enrichmentService';
+import { analyzeSalary } from '../services/salaryAnalyzer';
 
 // Server-side rule-based evaluator
 function runHeuristicScanner(title: string, desc: string, company: string, salary: string) {
@@ -122,13 +123,26 @@ export async function analyzeJob(req: Request, res: Response): Promise<void> {
 
     const heuristics = runHeuristicScanner(title, description, companyName, salary);
     const enrichment = enrichCompany(companyName);
+    const salaryAudit = analyzeSalary(title, description, salary || null);
+
+    // Adjust score and flags based on salary anomalies
+    const mergedRedFlags = [...heuristics.redFlags, ...salaryAudit.redFlags];
+    let finalTrustScore = heuristics.trustScore - Math.round(salaryAudit.riskScore / 2);
+    finalTrustScore = Math.max(0, Math.min(100, finalTrustScore));
+
+    let finalStatus = heuristics.status;
+    if (finalTrustScore < 50) {
+      finalStatus = 'danger';
+    } else if (finalTrustScore < 80) {
+      finalStatus = 'suspicious';
+    }
 
     if (!company) {
       company = await prisma.company.create({
         data: {
           name: companyName,
-          verified: heuristics.companyVerified && enrichment.verified,
-          trustScore: heuristics.trustScore,
+          verified: heuristics.companyVerified && enrichment.verified && (salaryAudit.riskScore < 50),
+          trustScore: finalTrustScore,
           website: enrichment.website,
           linkedinUrl: enrichment.linkedinUrl,
           size: enrichment.size,
@@ -144,9 +158,9 @@ export async function analyzeJob(req: Request, res: Response): Promise<void> {
         description,
         location: location || null,
         salary: salary || null,
-        trustScore: heuristics.trustScore,
-        status: heuristics.status,
-        redFlags: heuristics.redFlags,
+        trustScore: finalTrustScore,
+        status: finalStatus,
+        redFlags: mergedRedFlags,
         greenFlags: heuristics.greenFlags,
         companyId: company.id,
         userId: userId || null,
@@ -210,5 +224,25 @@ export async function getHistoryByUserId(req: Request, res: Response): Promise<v
   } catch (error: any) {
     console.error('Error fetching user history:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+/**
+ * Performs on-demand compensation safety analysis
+ */
+export async function analyzeSalaryInfo(req: Request, res: Response): Promise<void> {
+  try {
+    const { title, description, salary } = req.body;
+
+    if (!title || !description) {
+      res.status(400).json({ error: 'Title and description are required' });
+      return;
+    }
+
+    const audit = analyzeSalary(title, description, salary || null);
+    res.status(200).json(audit);
+  } catch (error: any) {
+    console.error('Error running salary audit:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }
