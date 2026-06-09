@@ -1,0 +1,51 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String        @id @default(uuid())
+  email     String        @unique
+  name      String
+  createdAt DateTime      @default(now())
+  analyses  JobAnalysis[]
+
+  @@map("users")
+}
+
+model Company {
+  id         String        @id @default(uuid())
+  name       String        @unique
+  verified   Boolean       @default(false)
+  website    String?
+  trustScore Int?          @default(100)
+  createdAt  DateTime      @default(now())
+  jobs       JobAnalysis[]
+
+  @@map("companies")
+}
+
+model JobAnalysis {
+  id          String   @id @default(uuid())
+  title       String
+  location    String?
+  description String
+  salary      String?
+  trustScore  Int
+  status      String   // "safe", "suspicious", "danger"
+  redFlags    String[]
+  greenFlags  String[]
+  scannedAt   DateTime @default(now())
+  
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("job_analyses")
+}
