@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Add custom styles here if needed */
+.veriwork-badge {
+  font-weight: 700;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
