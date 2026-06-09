@@ -18,19 +18,39 @@ function extractJobDetails(): JobDetails | null {
   // 1. LinkedIn Detection
   if (url.includes('linkedin.com')) {
     // Title
-    const titleEl = document.querySelector('.jobs-unified-top-card__job-title, .job-details-jobs-unified-top-card__content--web h1, h1.t-24');
+    const titleEl = document.querySelector(
+      '.jobs-unified-top-card__job-title, ' +
+      '.job-details-jobs-unified-top-card__content--web h1, ' +
+      'h1.t-24, ' +
+      '.jobs-details h1, ' +
+      '.jobs-search__job-details h1'
+    );
     title = titleEl?.textContent?.trim() || '';
 
     // Company
-    const companyEl = document.querySelector('.jobs-unified-top-card__company-name a, .jobs-unified-top-card__primary-description a, [class*="company-name"]');
+    const companyEl = document.querySelector(
+      '.jobs-unified-top-card__company-name a, ' +
+      '.jobs-unified-top-card__primary-description a, ' +
+      '.jobs-details-header__company-link, ' +
+      '[class*="company-name"]'
+    );
     company = companyEl?.textContent?.trim() || '';
 
     // Location
-    const locationEl = document.querySelector('.jobs-unified-top-card__bullet, .jobs-unified-top-card__primary-description span:nth-of-type(1)');
+    const locationEl = document.querySelector(
+      '.jobs-unified-top-card__bullet, ' +
+      '.jobs-unified-top-card__primary-description span:nth-of-type(1), ' +
+      '.jobs-details-header__location'
+    );
     location = locationEl?.textContent?.trim() || '';
 
     // Description
-    const descEl = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content');
+    const descEl = document.querySelector(
+      '#job-details, ' +
+      '.jobs-description__content, ' +
+      '.jobs-box__html-content, ' +
+      '.jobs-description-content'
+    );
     description = descEl?.textContent?.trim() || '';
 
     // Salary info
@@ -278,6 +298,16 @@ observer.observe(document.body, {
   childList: true,
   subtree: true,
 });
+
+// Active SPA URL navigation listener
+let lastUrl = window.location.href;
+setInterval(() => {
+  if (window.location.href !== lastUrl) {
+    lastUrl = window.location.href;
+    console.log('VeriWork detected SPA page navigation. Re-evaluating...');
+    debouncedScan();
+  }
+}, 500);
 
 // Initial run on script injection
 debouncedScan();
